@@ -1,0 +1,77 @@
+name: Release Binary
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build & Release (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: avengers-bot
+            archive_name: avengers-bot-linux-x86_64.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: avengers-bot.exe
+            archive_name: avengers-bot-windows-x86_64.zip
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build Binary (Release Mode)
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package Binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} dist/
+          cp .env.example dist/
+          cp README.md dist/
+          tar -czvf ${{ matrix.archive_name }} -C dist .
+
+      - name: Package Binary (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} dist/
+          cp .env.example dist/
+          cp README.md dist/
+          7z a ${{ matrix.archive_name }} ./dist/*
+
+      - name: Publish GitHub Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag_name }}
+          files: ${{ matrix.archive_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
